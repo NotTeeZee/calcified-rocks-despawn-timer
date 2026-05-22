@@ -15,6 +15,7 @@ import java.time.Duration;
 
 public class CalcifiedRockDespawnTimerOverlay extends Overlay {
     private static final int TIMER_Y_OFFSET = -10;
+    private static final int RESET_TEXT_SPACING = 2;
 
     private final CalcifiedRockDespawnTimerPlugin plugin;
     private final CalcifiedRockDespawnTimerConfig config;
@@ -73,8 +74,31 @@ public class CalcifiedRockDespawnTimerOverlay extends Overlay {
                 textComponent.setColor(rockState.getTimerColor());
                 textComponent.render(graphics);
             }
+
+            if (shouldRenderResetText(rockState)) {
+                String resetText = formatResetText(rockState);
+                CustomTextComponent resetTextComponent = new CustomTextComponent(
+                        resetText,
+                        new java.awt.Point(renderPoint.getX(), renderPoint.getY() + config.uiSizeNormal() + RESET_TEXT_SPACING)
+                );
+                resetTextComponent.setColor(config.resetTimerColor());
+                resetTextComponent.render(graphics);
+            }
         }
         return null;
+    }
+
+    private boolean shouldRenderResetText(CalcifiedRockState rockState) {
+        return config.resetTimerDisplayType() != ResetTimerDisplayTypes.OFF && rockState.shouldShowResetTimer();
+    }
+
+    private String formatResetText(CalcifiedRockState rockState) {
+        if (config.resetTimerDisplayType() == ResetTimerDisplayTypes.TICKS) {
+            return String.valueOf(rockState.getResetTicksRemaining());
+        }
+
+        Duration duration = Duration.ofSeconds(rockState.getResetSecondsRemaining());
+        return String.format("%d:%02d", Math.abs(duration.toMinutesPart()), Math.abs(duration.toSecondsPart()));
     }
 }
 

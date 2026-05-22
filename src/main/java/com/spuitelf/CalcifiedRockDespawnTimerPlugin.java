@@ -1,5 +1,6 @@
 package com.spuitelf;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.inject.Provides;
 import lombok.Getter;
 import net.runelite.api.*;
@@ -32,23 +33,26 @@ public class CalcifiedRockDespawnTimerPlugin extends Plugin {
     private static final int CAM_TORUM_REGION = 6037;
     private static final int CAM_TORUM_STREAM_OBJECT_ID = 51493;
     private static final int STREAM_TIMER_SECONDS = 30;
-    private static final Set<Integer> MINING_WALL_ANIMATIONS = Set.of(
-            AnimationID.HUMAN_MINING_BLACK_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_INFERNAL_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_RUNE_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_BRONZE_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_IRON_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_STEEL_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_ADAMANT_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_MITHRIL_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_DRAGON_PICKAXE_WALL,
+    private static final Set<Integer> MINING_WALL_ANIMATIONS = ImmutableSet.of(
             AnimationID.HUMAN_MINING_3A_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_GILDED_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_ZALCANO_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_ADAMANT_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_BLACK_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_BRONZE_PICKAXE_WALL,
             AnimationID.HUMAN_MINING_CRYSTAL_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_LEAGUE_TRAILBLAZER_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_DRAGON_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_ZALCANO_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_TRAILBLAZER_PICKAXE_NO_INFERNAL_WALL,
+            AnimationID.HUMAN_MINING_DRAGON_PICKAXE_PRETTY_WALL,
+            AnimationID.HUMAN_MINING_GILDED_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_INFERNAL_PICKAXE_WALL,
             AnimationID.HUMAN_MINING_TRAILBLAZER_PICKAXE_WALL,
-            AnimationID.HUMAN_MINING_TRAILBLAZER_RELOADED_PICKAXE_WALL
+            AnimationID.HUMAN_MINING_TRAILBLAZER_RELOADED_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_IRON_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_MITHRIL_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_RUNE_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_STEEL_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_LEAGUE_TRAILBLAZER_PICKAXE_WALL,
+            AnimationID.HUMAN_MINING_TRAILBLAZER_RELOADED_PICKAXE_NO_INFERNAL_WALL
     );
 
     @Inject
@@ -138,7 +142,8 @@ public class CalcifiedRockDespawnTimerPlugin extends Plugin {
         deferTickQueue.forEach(Runnable::run);
         deferTickQueue.clear();
 
-        uniqueRocks.forEach(CalcifiedRockState::tick);
+        HashSet<CalcifiedRockState> minedRocks = new HashSet<>(playerMiningRock.values());
+        uniqueRocks.forEach(rock -> rock.tick(minedRocks.contains(rock)));
         nextGarbageCollect--;
         if (nextGarbageCollect <= 0) {
             ArrayList<CalcifiedRockState> toDelete = new ArrayList<>();
@@ -148,7 +153,7 @@ public class CalcifiedRockDespawnTimerPlugin extends Plugin {
                 boolean isFarAway = localPlayer != null
                         && rock.worldPoint.getPlane() == localPlayer.getWorldLocation().getPlane()
                         && rock.worldPoint.distanceTo(localPlayer.getWorldLocation()) > 150;
-                if ((isFarAway && !rock.shouldShowTimer(DebugLevel.NONE)) || rock.getTimeTicks() <= 0) {
+                if (isFarAway && !rock.shouldShowTimer(DebugLevel.NONE)) {
                     toDelete.add(rock);
                 }
             });
@@ -215,7 +220,7 @@ public class CalcifiedRockDespawnTimerPlugin extends Plugin {
 
         CalcifiedRockState streamRock = rockAtLocation.get(streamPoint);
         if (streamRock != null) {
-            streamRock.forceTimerSeconds(STREAM_TIMER_SECONDS);
+            streamRock.forceStreamTimerSeconds(STREAM_TIMER_SECONDS);
         }
     }
 
@@ -232,6 +237,11 @@ public class CalcifiedRockDespawnTimerPlugin extends Plugin {
 
         WorldPoint streamPoint = decorativeObject.getWorldLocation();
         streamLocations.remove(streamPoint);
+
+        CalcifiedRockState streamRock = rockAtLocation.get(streamPoint);
+        if (streamRock != null && !isRockUnderStream(streamRock)) {
+            streamRock.clearStreamTimer();
+        }
     }
 
     @Subscribe
@@ -317,7 +327,6 @@ public class CalcifiedRockDespawnTimerPlugin extends Plugin {
         }
 
         if (player == client.getLocalPlayer()) {
-            // Local timer starts on Mining XP drop (onStatChanged), not on animation.
             playerMiningRock.put(player, interactingRock);
             return;
         }
@@ -380,6 +389,9 @@ public class CalcifiedRockDespawnTimerPlugin extends Plugin {
             synchronizingScene = false;
         }
 
+        // Existing streams at login/hop have unknown age; still suppress reset tracking while present.
+        uniqueRocks.forEach(rock -> rock.setStreamTimerActive(isRockUnderStream(rock)));
+
         client.getTopLevelWorldView().players().forEach(player -> {
             if (isMiningCalcifiedRock(player)) {
                 startupSuppressedMiningPlayers.add(player);
@@ -402,9 +414,13 @@ public class CalcifiedRockDespawnTimerPlugin extends Plugin {
     }
 
     private void applyStreamTimerIfPresent(CalcifiedRockState rockState) {
-        if (rockState.points.stream().anyMatch(streamLocations::contains)) {
-            rockState.forceTimerSeconds(STREAM_TIMER_SECONDS);
+        if (isRockUnderStream(rockState)) {
+            rockState.forceStreamTimerSeconds(STREAM_TIMER_SECONDS);
         }
+    }
+
+    private boolean isRockUnderStream(CalcifiedRockState rockState) {
+        return rockState.points.stream().anyMatch(streamLocations::contains);
     }
 
     private boolean inCamTorumMiningArea() {

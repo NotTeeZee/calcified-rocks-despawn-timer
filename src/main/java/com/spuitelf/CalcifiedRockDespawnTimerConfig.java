@@ -21,10 +21,20 @@ public interface CalcifiedRockDespawnTimerConfig extends Config {
         return TimerTypes.PIE;
     }
 
+    @ConfigItem(
+            keyName = "resetTimerDisplayType",
+            name = "Reset Timer",
+            position = 2,
+            description = "Display how long an unmined active rock has before its timer resets to full duration."
+    )
+    default ResetTimerDisplayTypes resetTimerDisplayType() {
+        return ResetTimerDisplayTypes.OFF;
+    }
+
     @ConfigSection(
             name = "Advanced UI Customization",
             description = "Detailed options for customizing timer overlay",
-            position = 2,
+            position = 3,
             closedByDefault = true
     )
     String uiCustomizationSection = "uiCustomizationSection";
@@ -73,12 +83,23 @@ public interface CalcifiedRockDespawnTimerConfig extends Config {
         return new Color(0, 255, 0);
     }
 
+    @ConfigItem(
+            keyName = "resetTimerColor",
+            name = "Reset Timer Color",
+            position = 4,
+            description = "Overlay color for the reset timer text.",
+            section = uiCustomizationSection
+    )
+    default Color resetTimerColor() {
+        return Color.WHITE;
+    }
+
     String UI_SIZE_NORMAL = "uiSizeNormal";
 
     @ConfigItem(
             keyName = UI_SIZE_NORMAL,
             name = "UI Size Normal",
-            position = 4,
+            position = 5,
             description = "Size of the timer.",
             section = uiCustomizationSection
     )
@@ -89,7 +110,7 @@ public interface CalcifiedRockDespawnTimerConfig extends Config {
     @ConfigSection(
             name = "Debug",
             description = "Basic debugging features.",
-            position = 3,
+            position = 4,
             closedByDefault = true
     )
     String debugSection = "debugSection";

@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.function.Function;
 
 public class CalcifiedRockState {
+    static final int RESET_AFTER_UNMINED_TICKS = 56;
+    static final int RESET_DISPLAY_AFTER_UNMINED_TICKS = 5;
 
     WorldPoint worldPoint;
     Point centerOffset;
@@ -20,6 +22,9 @@ public class CalcifiedRockState {
 
     private int ticksLeft;
     private final int maxTicks;
+    private int unminedTicks = 0;
+    private boolean minedThisTick = false;
+    private boolean streamTimerActive = false;
     private final Client client;
     private final CalcifiedRockDespawnTimerConfig config;
 
@@ -36,19 +41,74 @@ public class CalcifiedRockState {
     }
 
     void startTimer() {
+        if (ticksLeft <= 0) {
+            ticksLeft = maxTicks;
+        }
         if (!timerStarted) {
             timerStarted = true;
         }
+        unminedTicks = 0;
     }
 
     void forceTimerSeconds(int seconds) {
         int forcedTicks = (int) Math.ceil((seconds * 1000d) / Constants.GAME_TICK_LENGTH);
         ticksLeft = Math.max(forcedTicks, 0);
         timerStarted = true;
+        streamTimerActive = false;
+        unminedTicks = 0;
     }
 
-    void tick() {
-        if (timerStarted && ticksLeft > 0) {
+    void forceStreamTimerSeconds(int seconds) {
+        int forcedTicks = (int) Math.ceil((seconds * 1000d) / Constants.GAME_TICK_LENGTH);
+        ticksLeft = Math.max(forcedTicks, 0);
+        timerStarted = true;
+        streamTimerActive = true;
+        unminedTicks = 0;
+    }
+
+    void clearStreamTimer() {
+        streamTimerActive = false;
+    }
+
+    void setStreamTimerActive(boolean streamTimerActive) {
+        this.streamTimerActive = streamTimerActive;
+        if (streamTimerActive) {
+            unminedTicks = 0;
+        }
+    }
+
+    void tick(boolean minedThisTick) {
+        this.minedThisTick = minedThisTick;
+        if (!timerStarted) {
+            unminedTicks = 0;
+            return;
+        }
+
+        if (streamTimerActive) {
+            unminedTicks = 0;
+            if (ticksLeft > 0) {
+                ticksLeft--;
+            }
+            return;
+        }
+
+        if (minedThisTick) {
+            unminedTicks = 0;
+            if (ticksLeft > 0) {
+                ticksLeft--;
+            }
+            return;
+        }
+
+        unminedTicks++;
+        if (unminedTicks >= RESET_AFTER_UNMINED_TICKS) {
+            ticksLeft = maxTicks;
+            timerStarted = false;
+            unminedTicks = 0;
+            return;
+        }
+
+        if (ticksLeft > 0) {
             ticksLeft--;
         }
     }
@@ -90,6 +150,21 @@ public class CalcifiedRockState {
         int tickDelta = timerStarted && ticksLeft > 0 ? -1 : 0;
         int secondsLeft = (int) Math.floor((ticksLeft * Constants.GAME_TICK_LENGTH + subTickMs * tickDelta) / 1000f);
         return Math.max(secondsLeft, 0);
+    }
+
+    boolean shouldShowResetTimer() {
+        return timerStarted
+                && !streamTimerActive
+                && !minedThisTick
+                && unminedTicks >= RESET_DISPLAY_AFTER_UNMINED_TICKS;
+    }
+
+    Integer getResetTicksRemaining() {
+        return Math.max(RESET_AFTER_UNMINED_TICKS - unminedTicks, 0);
+    }
+
+    Integer getResetSecondsRemaining() {
+        return (int) Math.ceil((getResetTicksRemaining() * Constants.GAME_TICK_LENGTH) / 1000d);
     }
 
     private List<WorldPoint> getPoints(GameObject gameObject) {
